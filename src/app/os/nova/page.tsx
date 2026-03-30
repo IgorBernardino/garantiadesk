@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { Usuario, Loja } from '@/types'
-import { MODELOS, TECNICOS, lojaConfig, LOJAS_CONFIG } from '@/lib/utils'
+import { MODELOS, TECNICOS, LOJAS_CONFIG } from '@/lib/utils'
 import Topbar from '@/components/layout/Topbar'
 import { useRouter } from 'next/navigation'
 
@@ -19,13 +19,23 @@ export default function NovaOSPage() {
   const [lojas, setLojas] = useState<Loja[]>([])
   const [step, setStep] = useState(0)
   const [saving, setSaving] = useState(false)
-  const [checks, setChecks] = useState([false, false, false, false, false, false])
+  const [checks, setChecks] = useState([false, false, false, false])
 
   const [form, setForm] = useState({
-    loja_id: 0, consultor: '', tipo: '', protocolo: '', chassi: '',
-    modelo: '', ano: '', km: '', cliente_nome: '', cliente_tel: '',
+    loja_id: 0,
+    consultor: '',
+    tipo: '',
+    protocolo: '',
+    chassi: '',
+    modelo: '',
+    ano: '',
+    km: '',
+    cliente_nome: '',
+    cliente_tel: '',
     data_entrada: new Date().toISOString().split('T')[0],
-    tecnico: '', descricao: '', status: 'Aberta'
+    tecnico: '',
+    descricao: '',
+    status: 'Aberta' as const
   })
 
   const supabase = createClient()
@@ -34,10 +44,17 @@ export default function NovaOSPage() {
   const carregar = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
+
     const { data: perfil } = await supabase.from('perfis').select('*, loja:lojas(*)').eq('id', user.id).single()
     if (!perfil) { router.push('/login'); return }
+    
     setUsuario(perfil as Usuario)
-    if (perfil.perfil === 'consultor') setForm(f => ({ ...f, loja_id: perfil.loja_id, consultor: perfil.nome }))
+    
+    // Se for consultor, fixa a loja dele automaticamente
+    if (perfil.perfil === 'consultor') {
+      setForm(f => ({ ...f, loja_id: perfil.loja_id, consultor: perfil.nome }))
+    }
+
     const { data: l } = await supabase.from('lojas').select('*').order('id')
     setLojas((l ?? []) as Loja[])
   }, [supabase, router])
@@ -47,7 +64,11 @@ export default function NovaOSPage() {
   const salvar = async () => {
     setSaving(true)
     const { error } = await supabase.from('ordens').insert([form])
-    if (!error) router.push('/os')
+    if (!error) {
+      router.push('/os')
+    } else {
+      alert('Erro ao salvar OS. Verifique os dados.')
+    }
     setSaving(false)
   }
 
@@ -55,10 +76,16 @@ export default function NovaOSPage() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC]">
-      <Topbar usuario={usuario} lojas={lojas} />
+      {/* CORREÇÃO DO ERRO DE COMPILAÇÃO: Passando lojaFiltro e onLojaChange */}
+      <Topbar 
+        usuario={usuario} 
+        lojas={lojas} 
+        lojaFiltro={form.loja_id || null} 
+        onLojaChange={(id) => setForm({ ...form, loja_id: id || 0 })} 
+      />
 
       <main className="max-w-3xl mx-auto px-4 py-12">
-        {/* Stepper Moderno */}
+        {/* Stepper Visual */}
         <div className="flex justify-between mb-12 relative">
           <div className="absolute top-1/2 left-0 w-full h-0.5 bg-slate-200 -translate-y-1/2 z-0" />
           {STEPS.map((s, i) => (
@@ -73,7 +100,8 @@ export default function NovaOSPage() {
 
         <div className="bg-white rounded-3xl shadow-xl shadow-blue-900/5 border border-slate-100 overflow-hidden">
           <div className="p-8">
-            {/* STEP 0: LOJA */}
+            
+            {/* STEP 0: SELEÇÃO DE UNIDADE */}
             {step === 0 && (
               <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
                 <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Selecione a Unidade</h2>
@@ -81,8 +109,9 @@ export default function NovaOSPage() {
                   {LOJAS_CONFIG.map(l => (
                     <button
                       key={l.id}
+                      disabled={usuario.perfil === 'consultor' && usuario.loja_id !== l.id}
                       onClick={() => { setForm({ ...form, loja_id: l.id }); setStep(1); }}
-                      className={`p-4 rounded-2xl border-2 text-left transition-all hover:shadow-md flex items-center gap-4 ${form.loja_id === l.id ? 'border-blue-500 bg-blue-50/50' : 'border-slate-100 bg-white hover:border-slate-200'}`}
+                      className={`p-4 rounded-2xl border-2 text-left transition-all flex items-center gap-4 ${form.loja_id === l.id ? 'border-blue-500 bg-blue-50/50' : 'border-slate-100 bg-white hover:border-slate-200 disabled:opacity-50'}`}
                     >
                       <div className="w-4 h-4 rounded-full" style={{ background: l.cor }} />
                       <span className="font-bold text-slate-700">{l.nome}</span>
@@ -108,9 +137,9 @@ export default function NovaOSPage() {
                   ))}
                 </div>
                 <div className="pt-4">
-                  <label className="text-[10px] font-black uppercase text-slate-400 mb-2 block">Protocolo da Fábrica (Obrigatório)</label>
+                  <label className="text-[10px] font-black uppercase text-slate-400 mb-2 block tracking-widest">Protocolo da Fábrica</label>
                   <input 
-                    placeholder="Ex: PROT-2024-001"
+                    placeholder="Ex: PROT-2026-001"
                     className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-3 text-sm font-bold focus:border-blue-500 focus:bg-white outline-none transition-all"
                     value={form.protocolo} 
                     onChange={e => setForm({ ...form, protocolo: e.target.value.toUpperCase() })} 
@@ -125,7 +154,7 @@ export default function NovaOSPage() {
                 <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Dados da Moto</h2>
                 <div className="grid grid-cols-2 gap-4">
                    <div className="col-span-2">
-                    <label className="text-[10px] font-black uppercase text-slate-400 mb-2 block">Modelo Suzuki</label>
+                    <label className="text-[10px] font-black uppercase text-slate-400 mb-2 block tracking-widest">Modelo Suzuki</label>
                     <select 
                       className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-3 text-sm font-bold outline-none"
                       value={form.modelo} onChange={e => setForm({ ...form, modelo: e.target.value })}
@@ -135,28 +164,28 @@ export default function NovaOSPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="text-[10px] font-black uppercase text-slate-400 mb-2 block">Chassi (Últimos 8)</label>
+                    <label className="text-[10px] font-black uppercase text-slate-400 mb-2 block tracking-widest">Chassi (8 dígitos)</label>
                     <input className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-3 text-sm font-mono font-bold uppercase" value={form.chassi} onChange={e => setForm({ ...form, chassi: e.target.value })} />
                   </div>
                   <div>
-                    <label className="text-[10px] font-black uppercase text-slate-400 mb-2 block">Kilometragem</label>
+                    <label className="text-[10px] font-black uppercase text-slate-400 mb-2 block tracking-widest">KM Atual</label>
                     <input type="number" className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-3 text-sm font-bold" value={form.km} onChange={e => setForm({ ...form, km: e.target.value })} />
                   </div>
                 </div>
               </div>
             )}
 
-            {/* STEP 3: CLIENTE E TÉCNICO */}
+            {/* STEP 3: RESPONSÁVEIS */}
             {step === 3 && (
               <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
                 <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Responsáveis</h2>
                 <div className="space-y-4">
                   <div>
-                    <label className="text-[10px] font-black uppercase text-slate-400 mb-2 block">Nome Completo do Cliente</label>
+                    <label className="text-[10px] font-black uppercase text-slate-400 mb-2 block tracking-widest">Nome do Cliente</label>
                     <input className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-3 text-sm font-bold" value={form.cliente_nome} onChange={e => setForm({ ...form, cliente_nome: e.target.value })} />
                   </div>
                   <div>
-                    <label className="text-[10px] font-black uppercase text-slate-400 mb-2 block">Técnico da Oficina</label>
+                    <label className="text-[10px] font-black uppercase text-slate-400 mb-2 block tracking-widest">Técnico da Oficina</label>
                     <select className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-3 text-sm font-bold" value={form.tecnico} onChange={e => setForm({ ...form, tecnico: e.target.value })}>
                       <option value="">Selecione o técnico...</option>
                       {TECNICOS.map(t => <option key={t} value={t}>{t}</option>)}
@@ -169,7 +198,7 @@ export default function NovaOSPage() {
             {/* STEP 4: REVISÃO FINAL */}
             {step === 4 && (
               <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
-                <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight text-center">Checklist de Conferência</h2>
+                <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight text-center">Conferência</h2>
                 <div className="space-y-3">
                   {[
                     'Protocolo validado na fábrica',
@@ -205,8 +234,8 @@ export default function NovaOSPage() {
             {step < STEPS.length - 1 ? (
               <button 
                 onClick={() => setStep(s => s + 1)}
-                disabled={step === 1 && !form.protocolo}
-                className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600 text-white px-8 py-3 rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-blue-500/20 transition-all active:scale-95"
+                disabled={(step === 1 && !form.protocolo) || (step === 0 && !form.loja_id)}
+                className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-8 py-3 rounded-xl text-xs font-black uppercase tracking-widest shadow-lg transition-all active:scale-95"
               >
                 Próximo Passo →
               </button>
@@ -214,9 +243,9 @@ export default function NovaOSPage() {
               <button 
                 onClick={salvar}
                 disabled={saving || !checks.every(Boolean)}
-                className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-10 py-3 rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
+                className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-10 py-3 rounded-xl text-xs font-black uppercase tracking-widest shadow-lg transition-all active:scale-95"
               >
-                {saving ? 'Gravando...' : 'Finalizar Abertura'}
+                {saving ? 'Gravando...' : 'Finalizar OS'}
               </button>
             )}
           </div>

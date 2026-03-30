@@ -27,79 +27,85 @@ export default function Topbar({ usuario, lojas, lojaFiltro, onLojaChange }: Pro
 
   const navLinks = [
     { href: '/dashboard', label: 'Painel' },
-    { href: '/os', label: 'Ordens de Serviço' },
+    { href: '/os', label: 'Ordens' },
     { href: '/ldb', label: 'Peças LDB' },
-    { href: '/nf', label: 'Vínculo NF' },
+    { href: '/nf', label: 'Faturamento' },
   ]
 
   return (
-    <header className="bg-white border-b border-gray-100 sticky top-0 z-30">
-      <div className="flex items-center gap-4 px-4 h-14">
-        {/* Logo */}
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="w-7 h-7 rounded-lg bg-blue-600 text-white text-xs font-bold flex items-center justify-center">G</div>
-          <span className="font-semibold text-sm text-gray-900 hidden sm:block">GarantiaDesk</span>
+    <header className="bg-white/80 backdrop-blur-md border-b border-slate-100 sticky top-0 z-50">
+      <div className="max-w-7xl mx-auto flex items-center justify-between px-4 h-20">
+        
+        {/* Logo e Nav */}
+        <div className="flex items-center gap-10">
+          <Link href="/dashboard" className="flex items-center gap-2 group">
+            <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center font-black text-xl shadow-lg shadow-slate-900/20 group-hover:scale-105 transition-transform">
+              G
+            </div>
+            <span className="text-lg font-black tracking-tighter uppercase italic hidden sm:block">
+              Garantia<span className="text-blue-600">Desk</span>
+            </span>
+          </Link>
+
+          <nav className="hidden lg:flex items-center gap-1">
+            {navLinks.map(link => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${
+                  pathname.startsWith(link.href)
+                    ? 'bg-slate-900 text-white shadow-md'
+                    : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                {link.label}
+              </Link>
+            ))}
+          </nav>
         </div>
 
-        {/* Nav */}
-        <nav className="flex items-center gap-1 flex-1 overflow-x-auto">
-          {navLinks.map(l => (
-            <Link
-              key={l.href}
-              href={l.href}
-              className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors ${
-                pathname.startsWith(l.href)
-                  ? 'bg-blue-50 text-blue-700 font-medium'
-                  : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
-              }`}
-            >
-              {l.label}
-            </Link>
-          ))}
-        </nav>
-
-        {/* Filtro de loja (só gerente) */}
-        {isGerente && (
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              onClick={() => onLojaChange(null)}
-              className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
-                lojaFiltro === null
-                  ? 'bg-gray-900 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              Todas
-            </button>
-            {lojas.map(l => {
-              const cfg = lojaConfig(l.id)
-              const ativa = lojaFiltro === l.id
-              return (
+        {/* Filtros de Loja (Apenas Gerente) */}
+        <div className="flex items-center gap-4">
+          {isGerente && (
+            <div className="hidden md:flex bg-slate-100 p-1 rounded-full border border-slate-200">
+              <button
+                onClick={() => onLojaChange(null)}
+                className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-tight transition-all ${
+                  lojaFiltro === null ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                Geral
+              </button>
+              {lojas.map(l => (
                 <button
                   key={l.id}
                   onClick={() => onLojaChange(l.id)}
-                  style={ativa ? { background: cfg.bg, color: cfg.tc } : {}}
-                  className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
-                    ativa ? '' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-tight transition-all ${
+                    lojaFiltro === l.id 
+                    ? 'bg-white text-slate-900 shadow-sm' 
+                    : 'text-slate-400 hover:text-slate-600'
                   }`}
                 >
-                  {l.nome}
+                  {l.nome.split(' ')[0]} {/* Pega apenas o primeiro nome para não lotar */}
                 </button>
-              )
-            })}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
 
-        {/* Usuário */}
-        <div className="flex items-center gap-2 shrink-0">
-          <div
-            className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold"
-            style={usuario.loja_id ? { background: lojaConfig(usuario.loja_id).bg, color: lojaConfig(usuario.loja_id).tc } : { background: '#f3f4f6', color: '#374151' }}
-          >
-            {usuario.nome.slice(0, 2).toUpperCase()}
+          {/* Perfil e Logout */}
+          <div className="flex items-center gap-3 pl-4 border-l border-slate-100">
+            <div className="text-right hidden sm:block">
+              <p className="text-[10px] font-black text-slate-900 uppercase leading-none">{usuario.nome}</p>
+              <p className="text-[9px] font-bold text-blue-500 uppercase tracking-tighter">{usuario.perfil}</p>
+            </div>
+            <button 
+              onClick={logout}
+              className="w-10 h-10 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400 hover:bg-red-50 hover:text-red-500 hover:border-red-100 transition-all"
+              title="Sair"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+            </button>
           </div>
-          <span className="text-xs text-gray-500 hidden md:block">{usuario.nome}</span>
-          <button onClick={logout} className="text-xs text-gray-400 hover:text-gray-700 ml-1">sair</button>
         </div>
       </div>
     </header>
