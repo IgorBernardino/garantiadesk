@@ -23,12 +23,10 @@ export default function OSDetailPage() {
   const [lojas, setLojas] = useState<Loja[]>([])
   const [os, setOS] = useState<Ordem | null>(null)
   const [pecas, setPecas] = useState<PecaLDB[]>([])
-  const [nf, setNF] = useState<NotaFiscal | null>(null)
-  const [checks, setChecks] = useState(CHECK_ENC.map(() => false))
-  const [showNF, setShowNF] = useState(false)
-  const [nfForm, setNfForm] = useState({ numero_nf: '', emitido_em: new Date().toISOString().split('T')[0], valor: '', status_reembolso: 'Aguardando envio' })
+  const [nota, setNota] = useState<NotaFiscal | null>(null)
+  const [checks, setChecks] = useState(new Array(CHECK_ENC.length).fill(false))
   const [saving, setSaving] = useState(false)
-  const [updatingStatus, setUpdatingStatus] = useState(false)
+  
   const supabase = createClient()
   const router = useRouter()
 
@@ -36,255 +34,198 @@ export default function OSDetailPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
     const { data: perfil } = await supabase.from('perfis').select('*, loja:lojas(*)').eq('id', user.id).single()
-    if (!perfil) { router.push('/login'); return }
     setUsuario(perfil as Usuario)
-    const { data: lojasData } = await supabase.from('lojas').select('*').order('id')
-    setLojas((lojasData ?? []) as Loja[])
-    const { data: osData } = await supabase.from('ordens').select('*, loja:lojas(*)').eq('id', id).single()
-    if (!osData) { router.push('/os'); return }
-    setOS(osData as Ordem)
-    const { data: pecasData } = await supabase.from('pecas_ldb').select('*').eq('ordem_id', id)
-    setPecas((pecasData ?? []) as PecaLDB[])
-    const { data: nfData } = await supabase.from('notas_fiscais').select('*').eq('ordem_id', id).single()
-    if (nfData) setNF(nfData as NotaFiscal)
-    if (osData.status === 'Faturada') setChecks(CHECK_ENC.map(() => true))
-  }, [supabase, router, id])
+
+    const { data: l } = await supabase.from('lojas').select('*').order('id')
+    setLojas((l ?? []) as Loja[])
+
+    const { data: o } = await supabase.from('ordens').select('*, loja:lojas(*)').eq('id', id).single()
+    setOS(o as Ordem)
+
+    const { data: p } = await supabase.from('pecas_ldb').select('*').eq('ordem_id', id)
+    setPecas((p ?? []) as PecaLDB[])
+
+    const { data: n } = await supabase.from('notas_fiscais').select('*').eq('ordem_id', id).single()
+    setNota(n as NotaFiscal)
+  }, [id, supabase, router])
 
   useEffect(() => { carregar() }, [carregar])
 
-  async function atualizarStatus(novoStatus: string) {
-    setUpdatingStatus(true)
-    await supabase.from('ordens').update({ status: novoStatus }).eq('id', id)
-    setOS(prev => prev ? { ...prev, status: novoStatus as any } : null)
-    if (novoStatus === 'Concluída') setShowNF(true)
-    setUpdatingStatus(false)
-  }
-
-  async function salvarNF() {
-    if (!nfForm.numero_nf.trim()) { alert('Informe o número da NF.'); return }
+  const atualizarStatus = async (novo: string) => {
     setSaving(true)
-    const { data, error } = await supabase.from('notas_fiscais').insert({
-      ordem_id: parseInt(id),
-      loja_id: os!.loja_id,
-      numero_nf: nfForm.numero_nf.trim(),
-      emitido_em: nfForm.emitido_em,
-      valor: nfForm.valor ? parseFloat(nfForm.valor) : null,
-      status_reembolso: nfForm.status_reembolso,
-    }).select().single()
-    if (error) { alert('Erro: ' + error.message); setSaving(false); return }
-    setNF(data as NotaFiscal)
-    setOS(prev => prev ? { ...prev, status: 'Faturada' } : null)
-    setShowNF(false)
+    const { error } = await supabase.from('ordens').update({ 
+      status: novo,
+      concluido_em: novo === 'Concluída' ? new Date().toISOString() : os?.concluido_em 
+    }).eq('id', id)
+    if (!error) carregar()
     setSaving(false)
   }
 
-  const pct = Math.round(checks.filter(Boolean).length / checks.length * 100)
+  if (!os || !usuario) return null
 
-  if (!os || !usuario) return <div className="min-h-screen flex items-center justify-center"><div className="text-sm text-gray-400">Carregando...</div></div>
-
-  const cfg = lojaConfig(os.loja_id)
+  const pct = Math.round((checks.filter(Boolean).length / CHECK_ENC.length) * 100)
+  const config = lojaConfig(os.loja_id)
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Topbar usuario={usuario} lojas={lojas} lojaFiltro={null} onLojaChange={() => {}} />
+    <div className="min-h-screen bg-[#F8FAFC]">
+      <Topbar usuario={usuario} lojas={lojas} />
 
-      <main className="max-w-5xl mx-auto px-4 py-6">
-        {/* Header */}
-        <div className="flex items-center gap-3 mb-6 flex-wrap">
-          <button onClick={() => router.back()} className="btn text-xs">← Voltar</button>
-          <h1 className="page-title">{os.numero}</h1>
-          <BadgeTipo tipo={os.tipo} />
-          <BadgeStatus status={os.status} />
-          {os.loja && <BadgeLoja lojaId={os.loja_id} nome={os.loja.nome} />}
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Coluna esquerda */}
-          <div className="lg:col-span-2 space-y-4">
-
-            {/* Dados principais */}
-            <div className="card p-5">
-              <div className="section-title">Dados da OS</div>
-              <div className="grid grid-cols-2 gap-x-6 gap-y-1">
-                {[
-                  ['Protocolo', os.protocolo],
-                  ['Tipo', os.tipo],
-                  ['Chassi', os.chassi],
-                  ['Modelo', `${os.modelo}${os.ano ? ' — ' + os.ano : ''}`],
-                  ['KM', os.km ? os.km.toLocaleString('pt-BR') + ' km' : '—'],
-                  ['Cliente', os.cliente_nome],
-                  ['Telefone', os.cliente_tel ?? '—'],
-                  ['Técnico', os.tecnico],
-                  ['Tempo previsto', os.tempo_previsto ? os.tempo_previsto + 'h' : '—'],
-                  ['Aberta em', fmtData(os.criado_em)],
-                  ['Concluída em', os.concluido_em ? fmtData(os.concluido_em) : '—'],
-                ].map(([k, v]) => (
-                  <div key={k} className="py-1.5 border-b border-gray-50">
-                    <div className="text-xs text-gray-400">{k}</div>
-                    <div className="text-sm font-medium text-gray-900 mt-0.5">{v}</div>
-                  </div>
-                ))}
+      <main className="max-w-7xl mx-auto px-4 py-8">
+        {/* Header de Ações */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+          <div className="flex items-center gap-4">
+            <button onClick={() => router.back()} className="p-2 hover:bg-white rounded-full transition-colors text-slate-400">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            </button>
+            <div>
+              <div className="flex items-center gap-3">
+                <h1 className="text-2xl font-black text-slate-900 tracking-tighter uppercase">{os.numero}</h1>
+                <BadgeStatus status={os.status} />
               </div>
-              <div className="mt-3 pt-3 border-t border-gray-50">
-                <div className="text-xs text-gray-400 mb-1">Descrição do serviço</div>
-                <p className="text-sm text-gray-700 leading-relaxed">{os.descricao}</p>
-              </div>
-              {os.observacoes && (
-                <div className="mt-3 pt-3 border-t border-gray-50">
-                  <div className="text-xs text-gray-400 mb-1">Observações</div>
-                  <p className="text-sm text-gray-600">{os.observacoes}</p>
-                </div>
-              )}
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">Abertura: {fmtData(os.criado_em)}</p>
             </div>
-
-            {/* Peças LDB */}
-            <div className="card p-5">
-              <div className="section-title">Peças livre de débito</div>
-              {pecas.length === 0 ? (
-                <p className="text-sm text-gray-400">Nenhuma peça LDB registrada para esta OS.</p>
-              ) : (
-                <div className="space-y-3">
-                  {pecas.map(p => (
-                    <div key={p.id} className="bg-gray-50 rounded-lg p-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-semibold font-mono text-gray-900">{p.codigo}</span>
-                        <span className={`badge text-xs ${p.status === 'Aplicada' ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>{p.status}</span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs text-gray-500">
-                        <span>Descrição: <span className="text-gray-700">{p.descricao}</span></span>
-                        {p.numero_serie && <span>Série: <span className="text-gray-700">{p.numero_serie}</span></span>}
-                        <span>Recebida: <span className="text-gray-700">{fmtData(p.recebido_em)}</span></span>
-                        {p.almoxarife && <span>Almoxarife: <span className="text-gray-700">{p.almoxarife}</span></span>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* NF vinculada */}
-            {nf && (
-              <div className="card p-5">
-                <div className="section-title">Nota fiscal vinculada</div>
-                <div className="grid grid-cols-2 gap-x-6 gap-y-1">
-                  {[
-                    ['Número NF', nf.numero_nf],
-                    ['Data de emissão', fmtData(nf.emitido_em)],
-                    ['Valor', fmtMoeda(nf.valor ?? undefined)],
-                  ].map(([k, v]) => (
-                    <div key={k} className="py-1.5 border-b border-gray-50">
-                      <div className="text-xs text-gray-400">{k}</div>
-                      <div className="text-sm font-semibold text-gray-900 mt-0.5">{v}</div>
-                    </div>
-                  ))}
-                  <div className="py-1.5 border-b border-gray-50 col-span-2">
-                    <div className="text-xs text-gray-400 mb-1">Status do reembolso</div>
-                    <BadgeReembolso status={nf.status_reembolso} />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Formulário NF */}
-            {showNF && !nf && (
-              <div className="card p-5 border-amber-200 border">
-                <div className="section-title">Vincular Nota Fiscal</div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="col-span-2">
-                    <label className="label">Número da NF <span className="text-red-400">*</span></label>
-                    <input className="input" value={nfForm.numero_nf} onChange={e => setNfForm(f => ({ ...f, numero_nf: e.target.value }))} placeholder="Ex: NF 000130" />
-                  </div>
-                  <div>
-                    <label className="label">Data de emissão</label>
-                    <input className="input" type="date" value={nfForm.emitido_em} onChange={e => setNfForm(f => ({ ...f, emitido_em: e.target.value }))} />
-                  </div>
-                  <div>
-                    <label className="label">Valor (R$)</label>
-                    <input className="input" type="number" value={nfForm.valor} onChange={e => setNfForm(f => ({ ...f, valor: e.target.value }))} placeholder="0,00" />
-                  </div>
-                  <div className="col-span-2">
-                    <label className="label">Status do reembolso</label>
-                    <select className="input" value={nfForm.status_reembolso} onChange={e => setNfForm(f => ({ ...f, status_reembolso: e.target.value }))}>
-                      <option>Aguardando envio</option>
-                      <option>Enviado à fábrica</option>
-                      <option>Reembolso recebido</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="flex gap-2 mt-4">
-                  <button onClick={() => setShowNF(false)} className="btn">Cancelar</button>
-                  <button onClick={salvarNF} disabled={saving} className="btn btn-primary">{saving ? 'Salvando...' : 'Salvar vínculo'}</button>
-                </div>
-              </div>
-            )}
           </div>
 
-          {/* Coluna direita */}
-          <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            {os.status === 'Aberta' && (
+              <button onClick={() => atualizarStatus('Em execução')} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase tracking-widest px-6 py-3 rounded-xl shadow-lg transition-all active:scale-95">Iniciar Execução</button>
+            )}
+            {os.status === 'Em execução' && (
+              <button onClick={() => atualizarStatus('Concluída')} disabled={saving || pct < 100} className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-[10px] font-black uppercase tracking-widest px-6 py-3 rounded-xl shadow-lg transition-all active:scale-95">Finalizar OS</button>
+            )}
+          </div>
+        </div>
 
-            {/* Ações de status */}
-            <div className="card p-5">
-              <div className="section-title">Atualizar status</div>
-              <div className="space-y-2">
-                {os.status === 'Aberta' && (
-                  <button onClick={() => atualizarStatus('Em execução')} disabled={updatingStatus} className="btn w-full justify-center" style={{ background: '#FAEEDA', color: '#633806', borderColor: '#FAC775' }}>
-                    Iniciar execução
-                  </button>
-                )}
-                {os.status === 'Em execução' && (
-                  <button
-                    onClick={() => { if (pct < 100 && !confirm('Checklist incompleto. Concluir mesmo assim?')) return; atualizarStatus('Concluída') }}
-                    disabled={updatingStatus}
-                    className="btn w-full justify-center"
-                    style={{ background: '#FCEBEB', color: '#791F1F', borderColor: '#F7C1C1' }}
-                  >
-                    Concluir OS
-                  </button>
-                )}
-                {os.status === 'Concluída' && !nf && (
-                  <button onClick={() => setShowNF(true)} className="btn btn-primary w-full justify-center">
-                    Vincular NF
-                  </button>
-                )}
-                {os.status === 'Faturada' && (
-                  <div className="badge w-full justify-center py-2" style={{ background: '#EAF3DE', color: '#27500A' }}>
-                    Processo encerrado
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Coluna Principal: Dados Técnicos */}
+          <div className="lg:col-span-2 space-y-6">
+            
+            {/* Card Veículo e Cliente */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+              <div className="p-6 border-b border-slate-50 bg-slate-50/50 flex justify-between items-center">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Informações Gerais</span>
+                <BadgeLoja lojaId={os.loja_id} nome={os.loja?.nome || ''} />
+              </div>
+              <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-4">
+                  <div className="flex flex-col">
+                    <span className="text-[9px] font-black text-blue-500 uppercase">Modelo da Moto</span>
+                    <span className="text-lg font-black text-slate-800">{os.modelo}</span>
                   </div>
-                )}
+                  <div className="flex flex-col">
+                    <span className="text-[9px] font-black text-blue-500 uppercase">Chassi (Final)</span>
+                    <span className="text-base font-mono font-bold text-slate-700">{os.chassi}</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[9px] font-black text-blue-500 uppercase">Kilometragem</span>
+                    <span className="text-base font-bold text-slate-700">{os.km} KM</span>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <div className="flex flex-col">
+                    <span className="text-[9px] font-black text-blue-500 uppercase">Cliente</span>
+                    <span className="text-lg font-black text-slate-800">{os.cliente_nome}</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[9px] font-black text-blue-500 uppercase">Protocolo Fábrica</span>
+                    <span className="text-base font-mono font-bold text-slate-700">{os.protocolo}</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[9px] font-black text-blue-500 uppercase">Técnico Responsável</span>
+                    <span className="text-base font-bold text-slate-700 uppercase">{os.tecnico}</span>
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* Checklist encerramento */}
-            <div className="card p-5">
-              <div className="section-title">Checklist de encerramento</div>
-              <div className="space-y-0">
+            {/* Card LDB e Peças */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                <div className="w-1.5 h-4 bg-amber-400 rounded-full" /> Peças em Garantia (LDB)
+              </h3>
+              {pecas.length > 0 ? (
+                <div className="space-y-3">
+                  {pecas.map(p => (
+                    <div key={p.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
+                      <div>
+                        <div className="text-sm font-black text-slate-800">{p.codigo}</div>
+                        <div className="text-[10px] font-bold text-slate-500 uppercase">{p.descricao}</div>
+                      </div>
+                      <span className="text-[10px] font-black px-3 py-1 bg-white rounded-full shadow-sm text-slate-400">{p.status}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="py-8 text-center border-2 border-dashed border-slate-100 rounded-2xl">
+                  <span className="text-xs font-bold text-slate-300 uppercase italic">Nenhuma peça vinculada</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Coluna Lateral: Status de Faturamento e Checklist */}
+          <div className="space-y-6">
+            
+            {/* Card Faturamento */}
+            <div className={`bg-white rounded-2xl shadow-lg border-t-4 p-6 ${nota ? 'border-t-emerald-500' : 'border-t-red-500'}`}>
+              <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest mb-4">Estado de Faturamento</h3>
+              {nota ? (
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center bg-emerald-50 p-3 rounded-lg border border-emerald-100">
+                    <span className="text-[10px] font-black text-emerald-700 uppercase">NF Emitida</span>
+                    <span className="text-sm font-black text-emerald-800">{nota.numero_nf}</span>
+                  </div>
+                  <div className="flex justify-between items-center px-1">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Valor Reembolso</span>
+                    <span className="text-lg font-black text-slate-900 tracking-tighter">{fmtMoeda(nota.valor ?? 0)}</span>
+                  </div>
+                  <BadgeReembolso status={nota.status_reembolso} />
+                </div>
+              ) : (
+                <div className="text-center py-4">
+                  <div className="text-red-500 font-black text-xs uppercase animate-pulse mb-1">Aguardando Nota Fiscal</div>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter leading-tight">O faturamento só pode ser iniciado após a conclusão da execução.</p>
+                </div>
+              )}
+            </div>
+
+            {/* Checklist de Progresso */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Checklist Técnico</h3>
+                <span className="text-xs font-black text-blue-600">{pct}%</span>
+              </div>
+              
+              <div className="space-y-1 mb-6">
+                <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-blue-600 rounded-full transition-all duration-500" 
+                    style={{ width: `${pct}%` }} 
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
                 {CHECK_ENC.map((item, i) => (
                   <button
                     key={i}
-                    onClick={() => setChecks(c => { const n = [...c]; n[i] = !n[i]; return n })}
-                    disabled={os.status === 'Faturada'}
-                    className="flex items-start gap-2.5 w-full text-left py-2.5 border-b border-gray-50 last:border-0 hover:bg-gray-50 rounded transition-colors disabled:cursor-default"
+                    onClick={() => {
+                      if (os.status === 'Faturada') return;
+                      const n = [...checks]; n[i] = !n[i]; setChecks(n);
+                    }}
+                    className={`flex items-start gap-3 w-full text-left p-3 rounded-xl transition-all border ${checks[i] ? 'bg-blue-50/50 border-blue-100' : 'bg-white border-transparent hover:bg-slate-50'}`}
                   >
-                    <div className={`w-4 h-4 rounded flex items-center justify-center text-xs mt-0.5 shrink-0 transition-all ${checks[i] ? 'bg-blue-600 text-white' : 'border border-gray-300 bg-white'}`}>
-                      {checks[i] && '✓'}
+                    <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 mt-0.5 transition-all ${checks[i] ? 'bg-blue-600 text-white' : 'border-2 border-slate-200'}`}>
+                      {checks[i] && <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>}
                     </div>
                     <div>
-                      <div className={`text-xs ${checks[i] ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{item.label}</div>
-                      {item.obs && <div className="text-xs text-gray-400 mt-0.5">{item.obs}</div>}
+                      <div className={`text-[11px] font-bold leading-tight ${checks[i] ? 'text-blue-900' : 'text-slate-600'}`}>{item.label}</div>
+                      {item.obs && <div className="text-[9px] text-slate-400 font-medium mt-1 uppercase italic">{item.obs}</div>}
                     </div>
                   </button>
                 ))}
               </div>
-              <div className="mt-3">
-                <div className="flex justify-between text-xs text-gray-400 mb-1">
-                  <span>Progresso</span><span>{pct}%</span>
-                </div>
-                <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                  <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: pct === 100 ? '#3B6D11' : '#185FA5' }} />
-                </div>
-              </div>
             </div>
-
           </div>
         </div>
       </main>
