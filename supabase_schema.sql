@@ -153,9 +153,8 @@ create policy "perfil_proprio" on perfis
   using (id = auth.uid());
 
 -- ============================================================
--- DADOS DE EXEMPLO (opcional — remova em produção)
+-- DADOS DE EXEMPLO
 -- ============================================================
--- Descomente após criar usuários reais no Supabase Auth
 /*
 insert into ordens (loja_id,tipo,protocolo,chassi,modelo,ano,km,cliente_nome,cliente_tel,tecnico,descricao,status) values
   (1,'Recall','RC-2025-4499','9C2JC0510RR000042','CG 160 Start',2023,15200,'Pedro Alves','(13)98111-1111','Carlos Silva','Substituição do regulador retificador conforme BT RC-2025-4499','Em execução'),
