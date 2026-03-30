@@ -2,7 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Importação de fontes com pesos variados para o estilo "Heavy" */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=JetBrains+Mono:wght@500;700&display=swap');
 
 :root {
@@ -16,66 +15,7 @@ body {
 }
 
 @layer components {
-  /* Utilitários de Tipografia Opção B */
-  .font-black {
-    font-weight: 900;
-  }
-
-  /* Estilização de Scrollbar para as Tabelas */
-  .overflow-x-auto::-webkit-scrollbar {
-    height: 6px;
-  }
-  .overflow-x-auto::-webkit-scrollbar-track {
-    @apply bg-slate-100 rounded-full;
-  }
-  .overflow-x-auto::-webkit-scrollbar-thumb {
-    @apply bg-slate-300 rounded-full hover:bg-slate-400 transition-colors;
-  }
-
-  /* Efeito de Shimmer/Pulse para Loading States */
-  .animate-pulse-subtle {
-    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
-  }
-
-  /* Animação para Erros no Login */
-  .animate-shake {
-    animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both;
-  }
-
-  @keyframes shake {
-    10%, 90% { transform: translate3d(-1px, 0, 0); }
-    20%, 80% { transform: translate3d(2px, 0, 0); }
-    30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
-    40%, 60% { transform: translate3d(4px, 0, 0); }
-  }
-
-  /* Customização de Inputs para manter o padrão em todo o sistema */
-  input[type="date"]::-webkit-calendar-picker-indicator {
-    @apply opacity-40 hover:opacity-100 cursor-pointer transition-opacity;
-  }
-
-  /* Estilos de Botão Base (mantidos para compatibilidade) */
-  .btn-base {
-    @apply inline-flex items-center justify-center transition-all active:scale-[0.98] disabled:opacity-50;
-  }
-}
-
-@layer utilities {
-  .tracking-tighter {
-    letter-spacing: -0.05em;
-  }
-  
-  .tracking-widest {
-    letter-spacing: 0.15em;
-  }
-
-  /* Sombras customizadas mais profundas para o estilo "Enterprise" */
-  .shadow-2xl-blue {
-    box-shadow: 0 25px 50px -12px rgba(37, 99, 235, 0.15);
-  }
+  .font-black { font-weight: 900; }
+  .tracking-tighter { letter-spacing: -0.05em; }
+  .tracking-widest { letter-spacing: 0.1em; }
 }
