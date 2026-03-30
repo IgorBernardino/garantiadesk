@@ -28,7 +28,7 @@ export default function Topbar({ usuario, lojas, lojaFiltro, onLojaChange }: Pro
   const navLinks = [
     { href: '/dashboard', label: 'Painel' },
     { href: '/os', label: 'Ordens' },
-    { href: '/ldb', label: 'Peças LDB' },
+    { href: '/ldb', label: 'Peças LD' },
     { href: '/nf', label: 'Faturamento' },
   ]
 
