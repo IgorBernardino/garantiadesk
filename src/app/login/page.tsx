@@ -17,7 +17,7 @@ export default function LoginPage() {
     setLoading(true)
     const { error } = await supabase.auth.signInWithPassword({ email, password: senha })
     if (error) {
-      setErro('Credenciais inválidas. Verifique os dados e tente novamente.')
+      setErro('E-mail ou senha incorretos.')
       setLoading(false)
     } else {
       router.push('/dashboard')
@@ -25,50 +25,46 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC] relative overflow-hidden">
-      {/* Elementos Decorativos de Fundo */}
-      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-600/5 rounded-full blur-[120px]" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-slate-900/5 rounded-full blur-[120px]" />
-
-      <div className="w-full max-w-[400px] px-6 relative z-10">
-        {/* Logo e Header */}
-        <div className="text-center mb-10">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-slate-900 text-white text-2xl font-black mb-6 shadow-2xl shadow-slate-900/20 transform -rotate-3 hover:rotate-0 transition-transform duration-300">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-slate-50 px-4">
+      <div className="w-full max-w-sm">
+        {/* Logo */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-blue-600 text-white text-xl font-bold mb-4 shadow">
             G
           </div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tighter uppercase italic">Garantia<span className="text-blue-600">Desk</span></h1>
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mt-2">Sistema de Gestão Pós-Vendas</p>
+          <h1 className="text-2xl font-semibold text-gray-900">GarantiaDesk</h1>
+          <p className="text-sm text-gray-500 mt-1">Controle de Garantia e Recall</p>
         </div>
 
-        {/* Card de Login */}
-        <div className="bg-white rounded-[32px] shadow-2xl shadow-slate-200/50 border border-slate-100 p-10">
-          <form onSubmit={handleLogin} className="space-y-6">
-            <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">E-mail Corporativo</label>
+        <div className="card p-6">
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="label">E-mail</label>
               <input
-                className="w-full bg-slate-50 border-2 border-slate-50 rounded-2xl px-5 py-4 text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:bg-white transition-all placeholder:text-slate-300"
+                className="input"
                 type="email"
-                placeholder="nome.sobrenome@comeri.com.br"
+                placeholder="seu@email.com"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 required
+                autoComplete="email"
               />
             </div>
-
-            <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Senha de Acesso</label>
+            <div>
+              <label className="label">Senha</label>
               <input
-                className="w-full bg-slate-50 border-2 border-slate-50 rounded-2xl px-5 py-4 text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:bg-white transition-all placeholder:text-slate-300"
+                className="input"
                 type="password"
                 placeholder="••••••••"
                 value={senha}
                 onChange={e => setSenha(e.target.value)}
                 required
+                autoComplete="current-password"
               />
             </div>
 
             {erro && (
-              <div className="bg-red-50 border border-red-100 text-red-600 text-[11px] font-black uppercase tracking-tight rounded-xl px-4 py-3 animate-shake">
+              <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">
                 {erro}
               </div>
             )}
@@ -76,25 +72,16 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-slate-900 hover:bg-black text-white font-black uppercase tracking-[0.2em] text-[11px] py-5 rounded-2xl shadow-xl shadow-slate-900/20 transition-all active:scale-[0.98] disabled:opacity-70"
+              className="btn btn-primary w-full justify-center py-2"
             >
-              {loading ? 'Autenticando...' : 'Entrar no Sistema'}
+              {loading ? 'Entrando...' : 'Entrar'}
             </button>
           </form>
         </div>
 
-        {/* Footer */}
-        <div className="mt-12 flex flex-col items-center gap-4">
-          <div className="flex gap-4 opacity-30">
-            <div className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-            <div className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-            <div className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-          </div>
-          <p className="text-center text-[9px] font-black text-slate-400 uppercase tracking-widest leading-loose">
-            Rede de Concessionárias Suzuki<br />
-            Baixada Santista
-          </p>
-        </div>
+        <p className="text-center text-xs text-gray-400 mt-6">
+          Rede de Concessionárias — Baixada Santista
+        </p>
       </div>
     </div>
   )

@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase'
 import { PecaLDB, Loja, Usuario } from '@/types'
 import { BadgeLoja } from '@/components/ui/Badge'
 import Topbar from '@/components/layout/Topbar'
-import { fmtData, LOJAS_CONFIG } from '@/lib/utils'
+import { fmtData } from '@/lib/utils'
 import { useRouter } from 'next/navigation'
 
 export default function LDBPage() {
@@ -29,169 +29,182 @@ export default function LDBPage() {
     const { data: perfil } = await supabase.from('perfis').select('*, loja:lojas(*)').eq('id', user.id).single()
     if (!perfil) { router.push('/login'); return }
     setUsuario(perfil as Usuario)
-    if (perfil.perfil === 'consultor') setLojaFiltro(perfil.loja_id)
-
-    const { data: l } = await supabase.from('lojas').select('*').order('id')
-    setLojas((l ?? []) as Loja[])
-
-    const { data: p } = await supabase.from('pecas_ldb').select('*, loja:lojas(*)').order('criado_em', { ascending: false })
-    setPecas((p ?? []) as PecaLDB[])
+    if (perfil.perfil === 'consultor') {
+      setLojaFiltro(perfil.loja_id)
+      setForm(f => ({ ...f, loja_id: perfil.loja_id! }))
+    }
+    const { data: lojasData } = await supabase.from('lojas').select('*').order('id')
+    setLojas((lojasData ?? []) as Loja[])
+    const { data: pecasData } = await supabase.from('pecas_ldb').select('*, loja:lojas(*)').order('criado_em', { ascending: false })
+    setPecas((pecasData ?? []) as PecaLDB[])
   }, [supabase, router])
 
   useEffect(() => { carregar() }, [carregar])
 
-  const salvar = async (e: React.FormEvent) => {
-    e.preventDefault()
+  function set(k: string, v: string | number) { setForm(f => ({ ...f, [k]: v })) }
+
+  async function salvar() {
+    if (!form.loja_id || !form.codigo.trim() || !form.descricao.trim() || !form.protocolo.trim()) {
+      alert('Preencha loja, protocolo, código e descrição.'); return
+    }
     setSaving(true)
-    const payload = { ...form, loja_id: lojaFiltro || form.loja_id }
-    const { error } = await supabase.from('pecas_ldb').insert([payload])
-    if (!error) {
-      setShowForm(false)
-      carregar()
-    }
+    await supabase.from('pecas_ldb').insert({
+      loja_id: form.loja_id,
+      protocolo: form.protocolo.trim(),
+      codigo: form.codigo.trim().toUpperCase(),
+      descricao: form.descricao.trim(),
+      numero_serie: form.numero_serie.trim() || null,
+      recebido_em: form.recebido_em,
+      almoxarife: form.almoxarife.trim() || null,
+      status: form.status,
+      ordem_id: form.ordem_id ? parseInt(form.ordem_id) : null,
+    })
+    setShowForm(false)
     setSaving(false)
+    carregar()
   }
 
-  const filtradas = pecas.filter(p => {
-    const matchLoja = !lojaFiltro || p.loja_id === lojaFiltro
-    const matchStatus = !filtroStatus || p.status === filtroStatus
-    return matchLoja && matchStatus
-  })
+  const filtradas = pecas.filter(p =>
+    (!lojaFiltro || p.loja_id === lojaFiltro) &&
+    (!filtroStatus || p.status === filtroStatus)
+  )
+  const pendentes = filtradas.filter(p => p.status === 'Aguardando uso').length
 
-  const getStatusStyle = (s: string) => {
-    switch (s) {
-      case 'Aplicada': return 'bg-emerald-50 text-emerald-700 border-emerald-200 border-l-emerald-500';
-      case 'Devolvida': return 'bg-slate-50 text-slate-500 border-slate-200 border-l-slate-400';
-      default: return 'bg-amber-50 text-amber-700 border-amber-200 border-l-amber-500';
-    }
-  }
-
-  if (!usuario) return null
+  if (!usuario) return <div className="min-h-screen flex items-center justify-center"><div className="text-sm text-gray-400">Carregando...</div></div>
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC]">
-      <Topbar 
-        usuario={usuario} 
-        lojas={lojas} 
-        lojaFiltro={lojaFiltro} 
-        onLojaChange={(id) => usuario.perfil === 'gerente' && setLojaFiltro(id)} 
-      />
+    <div className="min-h-screen bg-gray-50">
+      <Topbar usuario={usuario} lojas={lojas} lojaFiltro={lojaFiltro}
+        onLojaChange={id => { if (usuario.perfil === 'gerente') setLojaFiltro(id) }} />
 
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+      <main className="max-w-7xl mx-auto px-4 py-6">
+        <div className="flex items-center justify-between gap-4 mb-5 flex-wrap">
           <div>
-            <h1 className="text-2xl font-black text-slate-900 tracking-tight uppercase">Peças LDB</h1>
-            <p className="text-sm text-slate-500 font-medium">Gestão de componentes em stock de garantia</p>
+            <h1 className="page-title">Peças Livre de Débito</h1>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Controle externo ao Dealer Net — {pendentes > 0 && <span className="text-amber-600 font-medium">{pendentes} aguardando uso</span>}
+            </p>
           </div>
-          
-          <div className="flex items-center gap-3">
-            <select 
-              value={filtroStatus} 
-              onChange={e => setFiltroStatus(e.target.value)}
-              className="bg-white border border-slate-200 text-slate-600 text-xs font-bold rounded-lg px-3 py-2.5 outline-none focus:ring-2 focus:ring-blue-500/20 uppercase tracking-wider"
-            >
-              <option value="">Todos os Status</option>
-              <option value="Aguardando uso">Aguardando uso</option>
-              <option value="Aplicada">Aplicada</option>
-              <option value="Devolvida">Devolvida</option>
-            </select>
-            
-            <button 
-              onClick={() => setShowForm(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-black uppercase tracking-widest px-5 py-2.5 rounded-lg transition-all shadow-md active:scale-95"
-            >
-              + Nova Peça
-            </button>
-          </div>
+          <button onClick={() => setShowForm(true)} className="btn btn-primary">+ Registrar peça LDB</button>
         </div>
 
-        {/* Listagem de Peças com Estilo Opção B */}
-        <div className="grid grid-cols-1 gap-4">
-          {filtradas.length > 0 ? (
-            filtradas.map(p => (
-              <div 
-                key={p.id} 
-                className={`bg-white rounded-xl shadow-sm border border-l-4 transition-all hover:shadow-md p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 ${getStatusStyle(p.status)}`}
-              >
-                <div className="flex items-center gap-5 min-w-0">
-                  <div className="hidden sm:flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/50 border border-current/10 shadow-inner">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.27 6.96 8.73 5.04 8.73-5.04"/><path d="M12 22.08V12"/></svg>
-                  </div>
-                  
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-3 mb-1">
-                      <span className="text-base font-black tracking-tight text-slate-900">{p.codigo}</span>
-                      <span className="text-[10px] font-black uppercase bg-white/60 px-2 py-0.5 rounded border border-current/10">LDB</span>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-bold text-slate-500">
-                      <span className="text-slate-800">{p.descricao}</span>
-                      <span className="text-slate-300">|</span>
-                      <span className="flex items-center gap-1">
-                        Prot: <span className="text-slate-600">{p.protocolo}</span>
-                      </span>
-                      {usuario.perfil === 'gerente' && !lojaFiltro && p.loja && (
-                        <>
-                          <span className="text-slate-300">|</span>
-                          <BadgeLoja lojaId={p.loja_id} nome={p.loja.nome} />
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
+        {pendentes > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800 mb-4">
+            {pendentes} peça{pendentes > 1 ? 's' : ''} aguardando uso — verifique se há OS aberta para cada protocolo
+          </div>
+        )}
 
-                <div className="flex items-center justify-between md:justify-end gap-6 shrink-0 border-t md:border-t-0 pt-3 md:pt-0 border-current/5">
-                  <div className="flex flex-col items-start md:items-end">
-                    <span className="text-[10px] uppercase font-black text-slate-400 tracking-tighter">Recebido em</span>
-                    <span className="text-xs font-bold text-slate-700">{fmtData(p.recebido_em)}</span>
-                  </div>
-                  <div className="flex flex-col items-start md:items-end">
-                    <span className="text-[10px] uppercase font-black text-slate-400 tracking-tighter">Status</span>
-                    <span className="text-xs font-black uppercase tracking-widest">{p.status}</span>
-                  </div>
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="bg-white rounded-2xl border-2 border-dashed border-slate-200 py-20 flex flex-col items-center">
-              <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 mb-4">
-                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.27 6.96 8.73 5.04 8.73-5.04"/><path d="M12 22.08V12"/></svg>
-              </div>
-              <p className="text-sm font-black text-slate-400 uppercase tracking-[0.2em]">Stock Vazio</p>
+        {showForm && (
+          <div className="card p-5 mb-4 border-blue-200 border">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-sm">Registrar nova peça LDB</h2>
+              <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-700 text-lg leading-none">×</button>
             </div>
-          )}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {usuario.perfil === 'gerente' && (
+                <div>
+                  <label className="label">Loja <span className="text-red-400">*</span></label>
+                  <select className="input" value={form.loja_id} onChange={e => set('loja_id', parseInt(e.target.value))}>
+                    <option value={0}>Selecione</option>
+                    {lojas.map(l => <option key={l.id} value={l.id}>{l.nome}</option>)}
+                  </select>
+                </div>
+              )}
+              <div>
+                <label className="label">Protocolo <span className="text-red-400">*</span></label>
+                <input className="input" value={form.protocolo} onChange={e => set('protocolo', e.target.value)} placeholder="RC-2025-4510" />
+              </div>
+              <div>
+                <label className="label">Código da peça <span className="text-red-400">*</span></label>
+                <input className="input font-mono" value={form.codigo} onChange={e => set('codigo', e.target.value.toUpperCase())} placeholder="31100-K97-V41" />
+              </div>
+              <div>
+                <label className="label">Descrição <span className="text-red-400">*</span></label>
+                <input className="input" value={form.descricao} onChange={e => set('descricao', e.target.value)} placeholder="Ex: Regulador retificador" />
+              </div>
+              <div>
+                <label className="label">Nº de série</label>
+                <input className="input" value={form.numero_serie} onChange={e => set('numero_serie', e.target.value)} placeholder="Se houver" />
+              </div>
+              <div>
+                <label className="label">Data de recebimento</label>
+                <input className="input" type="date" value={form.recebido_em} onChange={e => set('recebido_em', e.target.value)} />
+              </div>
+              <div>
+                <label className="label">Almoxarife</label>
+                <input className="input" value={form.almoxarife} onChange={e => set('almoxarife', e.target.value)} placeholder="Nome" />
+              </div>
+              <div>
+                <label className="label">OS vinculada</label>
+                <input className="input" value={form.ordem_id} onChange={e => set('ordem_id', e.target.value)} placeholder="ID da OS (se houver)" />
+              </div>
+              <div>
+                <label className="label">Status</label>
+                <select className="input" value={form.status} onChange={e => set('status', e.target.value)}>
+                  <option>Aguardando uso</option>
+                  <option>Aplicada</option>
+                  <option>Devolvida</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => setShowForm(false)} className="btn">Cancelar</button>
+              <button onClick={salvar} disabled={saving} className="btn btn-primary">{saving ? 'Salvando...' : 'Registrar entrada'}</button>
+            </div>
+          </div>
+        )}
+
+        <div className="flex gap-2 mb-3">
+          <select className="input w-auto text-xs" value={filtroStatus} onChange={e => setFiltroStatus(e.target.value)}>
+            <option value="">Todos os status</option>
+            <option>Aguardando uso</option>
+            <option>Aplicada</option>
+            <option>Devolvida</option>
+          </select>
+        </div>
+
+        <div className="card overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr>
+                  {usuario.perfil === 'gerente' && !lojaFiltro && <th className="th-cell">Loja</th>}
+                  <th className="th-cell">Código</th>
+                  <th className="th-cell">Descrição</th>
+                  <th className="th-cell hidden md:table-cell">Protocolo</th>
+                  <th className="th-cell hidden lg:table-cell">OS vinculada</th>
+                  <th className="th-cell hidden md:table-cell">Recebida em</th>
+                  <th className="th-cell hidden lg:table-cell">Almoxarife</th>
+                  <th className="th-cell">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtradas.map(p => (
+                  <tr key={p.id} className="hover:bg-gray-50 transition-colors">
+                    {usuario.perfil === 'gerente' && !lojaFiltro && (
+                      <td className="td-cell">{p.loja && <BadgeLoja lojaId={p.loja_id} nome={p.loja.nome} />}</td>
+                    )}
+                    <td className="td-cell font-mono text-xs font-semibold">{p.codigo}</td>
+                    <td className="td-cell text-gray-700">{p.descricao}</td>
+                    <td className="td-cell hidden md:table-cell text-xs text-gray-500 font-mono">{p.protocolo}</td>
+                    <td className="td-cell hidden lg:table-cell text-xs text-gray-500">{p.ordem_id ?? '—'}</td>
+                    <td className="td-cell hidden md:table-cell text-xs text-gray-500">{fmtData(p.recebido_em)}</td>
+                    <td className="td-cell hidden lg:table-cell text-xs text-gray-500">{p.almoxarife ?? '—'}</td>
+                    <td className="td-cell">
+                      <span className={`badge text-xs ${p.status === 'Aplicada' ? 'bg-green-50 text-green-700' : p.status === 'Devolvida' ? 'bg-gray-100 text-gray-500' : 'bg-amber-50 text-amber-700'}`}>
+                        {p.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+                {filtradas.length === 0 && (
+                  <tr><td colSpan={8} className="td-cell text-center text-gray-400 py-10">Nenhuma peça LDB registrada</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </main>
-
-      {/* Modal de Cadastro (Simplificado) */}
-      {showForm && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
-            <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
-              <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest">Nova Peça LDB</h2>
-              <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-600 transition-colors">✕</button>
-            </div>
-            <form onSubmit={salvar} className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2">
-                  <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Descrição da Peça</label>
-                  <input required className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/20" value={form.descricao} onChange={e=>setForm({...form, descricao: e.target.value})} />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Código Suzuki</label>
-                  <input required className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-blue-500/20" value={form.codigo} onChange={e=>setForm({...form, codigo: e.target.value})} />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Protocolo</label>
-                  <input required className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-blue-500/20" value={form.protocolo} onChange={e=>setForm({...form, protocolo: e.target.value})} />
-                </div>
-              </div>
-              <button type="submit" disabled={saving} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest py-3 rounded-xl shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98]">
-                {saving ? 'A guardar...' : 'Confirmar Registo'}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

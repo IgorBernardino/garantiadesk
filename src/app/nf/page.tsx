@@ -15,12 +15,7 @@ export default function NFPage() {
   const [notas, setNotas] = useState<NotaFiscal[]>([])
   const [lojaFiltro, setLojaFiltro] = useState<number | null>(null)
   const [osVinculando, setOSVinculando] = useState<Ordem | null>(null)
-  const [nfForm, setNfForm] = useState({ 
-    numero_nf: '', 
-    emitido_em: new Date().toISOString().split('T')[0], 
-    valor: '', 
-    status_reembolso: 'Aguardando envio' 
-  })
+  const [nfForm, setNfForm] = useState({ numero_nf: '', emitido_em: new Date().toISOString().split('T')[0], valor: '', status_reembolso: 'Aguardando envio' })
   const [saving, setSaving] = useState(false)
   const supabase = createClient()
   const router = useRouter()
@@ -32,170 +27,156 @@ export default function NFPage() {
     if (!perfil) { router.push('/login'); return }
     setUsuario(perfil as Usuario)
     if (perfil.perfil === 'consultor') setLojaFiltro(perfil.loja_id)
-
-    const { data: l } = await supabase.from('lojas').select('*').order('id')
-    setLojas((l ?? []) as Loja[])
-
-    const { data: o } = await supabase.from('ordens').select('*, loja:lojas(*)').order('concluido_em', { ascending: false })
-    setOrdens((o ?? []) as Ordem[])
-
-    const { data: n } = await supabase.from('notas_fiscais').select('*')
-    setNotas((n ?? []) as NotaFiscal[])
+    const { data: lojasData } = await supabase.from('lojas').select('*').order('id')
+    setLojas((lojasData ?? []) as Loja[])
+    const { data: ordensData } = await supabase.from('ordens').select('*, loja:lojas(*)').in('status', ['Concluída', 'Faturada']).order('concluido_em', { ascending: false })
+    setOrdens((ordensData ?? []) as Ordem[])
+    const { data: notasData } = await supabase.from('notas_fiscais').select('*')
+    setNotas((notasData ?? []) as NotaFiscal[])
   }, [supabase, router])
 
   useEffect(() => { carregar() }, [carregar])
 
-  const salvarNF = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!osVinculando) return
-    setSaving(true)
-    
-    const { error: errNF } = await supabase.from('notas_fiscais').insert([{
-      ordem_id: osVinculando.id,
-      numero_nf: nfForm.numero_nf,
-      emitido_em: nfForm.emitido_em,
-      valor: parseFloat(nfForm.valor),
-      status_reembolso: nfForm.status_reembolso
-    }])
+  function nfDaOS(osId: number) { return notas.find(n => n.ordem_id === osId) }
 
-    if (!errNF) {
-      await supabase.from('ordens').update({ status: 'Faturada' }).eq('id', osVinculando.id)
-      setOSVinculando(null)
-      carregar()
-    }
+  async function salvarNF() {
+    if (!osVinculando || !nfForm.numero_nf.trim()) { alert('Informe o número da NF.'); return }
+    setSaving(true)
+    const { error } = await supabase.from('notas_fiscais').insert({
+      ordem_id: osVinculando.id,
+      loja_id: osVinculando.loja_id,
+      numero_nf: nfForm.numero_nf.trim(),
+      emitido_em: nfForm.emitido_em,
+      valor: nfForm.valor ? parseFloat(nfForm.valor) : null,
+      status_reembolso: nfForm.status_reembolso,
+    })
+    if (error) { alert('Erro: ' + error.message); setSaving(false); return }
+    setOSVinculando(null)
+    setNfForm({ numero_nf: '', emitido_em: new Date().toISOString().split('T')[0], valor: '', status_reembolso: 'Aguardando envio' })
     setSaving(false)
+    carregar()
   }
 
-  const filtradas = lojaFiltro ? ordens.filter(o => o.loja_id === lojaFiltro) : ordens
+  const filtradas = ordens.filter(o => !lojaFiltro || o.loja_id === lojaFiltro)
+  const semNF = filtradas.filter(o => o.status === 'Concluída' && !nfDaOS(o.id))
 
-  if (!usuario) return null
+  if (!usuario) return <div className="min-h-screen flex items-center justify-center"><div className="text-sm text-gray-400">Carregando...</div></div>
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC]">
-      <Topbar 
-        usuario={usuario} 
-        lojas={lojas} 
-        lojaFiltro={lojaFiltro} 
-        onLojaChange={(id) => usuario.perfil === 'gerente' && setLojaFiltro(id)} 
-      />
+    <div className="min-h-screen bg-gray-50">
+      <Topbar usuario={usuario} lojas={lojas} lojaFiltro={lojaFiltro}
+        onLojaChange={id => { if (usuario.perfil === 'gerente') setLojaFiltro(id) }} />
 
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight uppercase">Faturamento e Notas</h1>
-          <p className="text-sm text-slate-500 font-medium">Controlo de reembolsos e vínculos de NF para as unidades da Baixada</p>
+      <main className="max-w-7xl mx-auto px-4 py-6">
+        <div className="mb-5">
+          <h1 className="page-title">Vínculo NF × OS</h1>
+          <p className="text-xs text-gray-400 mt-0.5">Planilha mestre de controle — Nota Fiscal vinculada a cada Ordem de Serviço</p>
         </div>
 
-        {/* Tabela de Gestão de Notas */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        {semNF.length > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800 mb-4">
+            <span className="font-semibold">{semNF.length} OS concluída{semNF.length > 1 ? 's' : ''}</span> aguardam emissão e vínculo de NF
+          </div>
+        )}
+
+        {/* Modal vínculo NF */}
+        {osVinculando && (
+          <div className="card p-5 mb-4 border-blue-300 border bg-blue-50">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="font-semibold text-sm">Vincular NF — {osVinculando.numero}</h2>
+                <p className="text-xs text-gray-500 mt-0.5">{osVinculando.tipo} · {osVinculando.protocolo} · {osVinculando.modelo}</p>
+              </div>
+              <button onClick={() => setOSVinculando(null)} className="text-gray-400 hover:text-gray-700 text-lg">×</button>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="label">Número da NF <span className="text-red-400">*</span></label>
+                <input className="input" value={nfForm.numero_nf} onChange={e => setNfForm(f => ({ ...f, numero_nf: e.target.value }))} placeholder="Ex: NF 000130" autoFocus />
+              </div>
+              <div>
+                <label className="label">Data de emissão</label>
+                <input className="input" type="date" value={nfForm.emitido_em} onChange={e => setNfForm(f => ({ ...f, emitido_em: e.target.value }))} />
+              </div>
+              <div>
+                <label className="label">Valor (R$)</label>
+                <input className="input" type="number" value={nfForm.valor} onChange={e => setNfForm(f => ({ ...f, valor: e.target.value }))} placeholder="0,00" />
+              </div>
+              <div className="col-span-2">
+                <label className="label">Status do reembolso</label>
+                <select className="input" value={nfForm.status_reembolso} onChange={e => setNfForm(f => ({ ...f, status_reembolso: e.target.value }))}>
+                  <option>Aguardando envio</option>
+                  <option>Enviado à fábrica</option>
+                  <option>Reembolso recebido</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => setOSVinculando(null)} className="btn">Cancelar</button>
+              <button onClick={salvarNF} disabled={saving} className="btn btn-primary">{saving ? 'Salvando...' : 'Salvar vínculo'}</button>
+            </div>
+          </div>
+        )}
+
+        <div className="card overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+            <table className="w-full">
               <thead>
-                <tr className="bg-slate-50 border-b border-slate-200">
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Ordem de Serviço</th>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Unidade</th>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Cliente / Modelo</th>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">Nota Fiscal</th>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Reembolso</th>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">Ação</th>
+                <tr>
+                  <th className="th-cell w-24">OS</th>
+                  {usuario.perfil === 'gerente' && !lojaFiltro && <th className="th-cell">Loja</th>}
+                  <th className="th-cell w-24">Tipo</th>
+                  <th className="th-cell hidden md:table-cell">Protocolo</th>
+                  <th className="th-cell hidden sm:table-cell">Conclusão</th>
+                  <th className="th-cell">NF</th>
+                  <th className="th-cell hidden md:table-cell">Data NF</th>
+                  <th className="th-cell hidden lg:table-cell">Valor</th>
+                  <th className="th-cell hidden lg:table-cell">Reembolso</th>
+                  <th className="th-cell w-24">Status</th>
+                  <th className="th-cell w-20"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody>
                 {filtradas.map(os => {
-                  const nota = notas.find(n => n.ordem_id === os.id)
+                  const nota = nfDaOS(os.id)
                   const pendente = os.status === 'Concluída' && !nota
-
                   return (
-                    <tr key={os.id} className={`group hover:bg-slate-50/50 transition-colors ${pendente ? 'bg-amber-50/30' : ''}`}>
-                      <td className="px-6 py-4">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-black text-slate-900 group-hover:text-blue-600 transition-colors">{os.numero}</span>
-                          <div className="mt-1"><BadgeTipo tipo={os.tipo} /></div>
-                        </div>
+                    <tr key={os.id} className={`transition-colors ${pendente ? 'bg-amber-50 hover:bg-amber-100' : 'hover:bg-gray-50'}`}>
+                      <td className="td-cell">
+                        <Link href={`/os/${os.id}`} className="font-semibold text-blue-600 hover:underline">{os.numero}</Link>
                       </td>
-                      <td className="px-6 py-4">
-                        {os.loja && <BadgeLoja lojaId={os.loja_id} nome={os.loja.nome} />}
+                      {usuario.perfil === 'gerente' && !lojaFiltro && (
+                        <td className="td-cell">{os.loja && <BadgeLoja lojaId={os.loja_id} nome={os.loja.nome} />}</td>
+                      )}
+                      <td className="td-cell"><BadgeTipo tipo={os.tipo} /></td>
+                      <td className="td-cell hidden md:table-cell text-xs text-gray-500 font-mono">{os.protocolo}</td>
+                      <td className="td-cell hidden sm:table-cell text-xs text-gray-500">{os.concluido_em ? fmtData(os.concluido_em) : '—'}</td>
+                      <td className="td-cell">
+                        {nota
+                          ? <span className="text-xs font-semibold text-green-700">{nota.numero_nf}</span>
+                          : <span className="text-xs text-red-500 font-medium">— pendente</span>
+                        }
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="flex flex-col">
-                          <span className="text-xs font-bold text-slate-700 truncate max-w-[180px]">{os.cliente_nome}</span>
-                          <span className="text-[10px] text-slate-400 font-medium italic">{os.modelo}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        {nota ? (
-                          <div className="inline-flex flex-col items-center">
-                            <span className="text-xs font-black text-emerald-700 bg-emerald-50 px-2 py-1 rounded border border-emerald-100">{nota.numero_nf}</span>
-                            <span className="text-[9px] text-slate-400 mt-1 font-bold">{fmtData(nota.emitido_em)}</span>
-                          </div>
-                        ) : (
-                          <span className="text-[10px] font-black uppercase text-red-500 bg-red-50 px-2 py-1 rounded animate-pulse">Pendente</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4">
-                        {nota ? (
-                          <div className="flex flex-col gap-1">
-                            <BadgeReembolso status={nota.status_reembolso} />
-                            <span className="text-xs font-black text-slate-800 tracking-tighter">{fmtMoeda(nota.valor ?? 0)}</span>
-                          </div>
-                        ) : <span className="text-slate-300 text-xs">—</span>}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        {pendente ? (
-                          <button 
-                            onClick={() => setOSVinculando(os)} 
-                            className="bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase tracking-widest py-2 px-4 rounded-lg shadow-md transition-all active:scale-95"
-                          >
-                            Vincular NF
-                          </button>
-                        ) : (
-                          <BadgeStatus status={os.status} />
+                      <td className="td-cell hidden md:table-cell text-xs text-gray-500">{nota ? fmtData(nota.emitido_em) : '—'}</td>
+                      <td className="td-cell hidden lg:table-cell text-xs text-gray-700">{nota ? fmtMoeda(nota.valor ?? undefined) : '—'}</td>
+                      <td className="td-cell hidden lg:table-cell">{nota ? <BadgeReembolso status={nota.status_reembolso} /> : '—'}</td>
+                      <td className="td-cell"><BadgeStatus status={os.status} /></td>
+                      <td className="td-cell">
+                        {pendente && (
+                          <button onClick={() => setOSVinculando(os)} className="btn btn-primary text-xs py-1 px-2">Vincular</button>
                         )}
                       </td>
                     </tr>
                   )
                 })}
+                {filtradas.length === 0 && (
+                  <tr><td colSpan={11} className="td-cell text-center text-gray-400 py-10">Nenhuma OS encontrada</td></tr>
+                )}
               </tbody>
             </table>
           </div>
         </div>
       </main>
-
-      {/* Modal de Vinculação de NF */}
-      {osVinculando && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in duration-200">
-            <div className="p-6 bg-slate-50 border-b border-slate-100">
-              <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest">Vincular Nota Fiscal</h2>
-              <p className="text-xs text-slate-500 mt-1">OS: <span className="text-blue-600 font-bold">{osVinculando.numero}</span> - {osVinculando.cliente_nome}</p>
-            </div>
-            
-            <form onSubmit={salvarNF} className="p-6 space-y-5">
-              <div>
-                <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Número da NF</label>
-                <input required className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500/20" value={nfForm.numero_nf} onChange={e=>setNfForm({...nfForm, numero_nf: e.target.value})} />
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Valor Bruto</label>
-                  <input required type="number" step="0.01" className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500/20" value={nfForm.valor} onChange={e=>setNfForm({...nfForm, valor: e.target.value})} />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Data de Emissão</label>
-                  <input required type="date" className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500/20" value={nfForm.emitido_em} onChange={e=>setNfForm({...nfForm, emitido_em: e.target.value})} />
-                </div>
-              </div>
-
-              <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => setOSVinculando(null)} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-black text-[10px] uppercase tracking-widest py-3 rounded-xl transition-colors">Cancelar</button>
-                <button type="submit" disabled={saving} className="flex-2 bg-blue-600 hover:bg-blue-700 text-white font-black text-[10px] uppercase tracking-widest py-3 px-6 rounded-xl shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98]">
-                  {saving ? 'A Processar...' : 'Confirmar Faturamento'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
