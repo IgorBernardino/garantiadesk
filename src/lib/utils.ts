@@ -25,7 +25,7 @@ export const MODELOS = [
 ]
 
 export const TECNICOS = [
-  'Carlos Silva', 'João Melo', 'Pedro Rocha', 'Ana Ferreira', 'Marcos Lima',
+  'ALEX', 'RONALD', 'GUILHERME', 'VITOR', 'WESLEY',
 ]
 
 export function lojaConfig(lojaId: number) {
