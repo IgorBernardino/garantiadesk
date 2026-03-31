@@ -21,11 +21,11 @@ export const TIPO_CONFIG: Record<TipoOS, { bg: string; tc: string }> = {
 }
 
 export const MODELOS = [
-  '350 E', 'T 350', 'T 350X', 'R 350', 'S 350', 'V 350', 'DK 160', 'DL 160', 'DR 160', 'NK 150', 'MASTER RIDE'
+  '350 E', 'T 350 X', 'T 350', 'S 350', 'V 350', 'R 350', 'GK 350','DR 160', 'DK 160', 'DK 150', 'DL 160', 'NK 150', 'MASTER RIDE',
 ]
 
 export const TECNICOS = [
-  'ALEX', 'RONALD', 'GUILHERME', 'VITOR', 'WESLEY',
+  'ALEX', 'GUILHERME', 'VITOR', 'RONALD', 'WESLEY'
 ]
 
 export function lojaConfig(lojaId: number) {

@@ -25,9 +25,13 @@ export default function OSDetailPage() {
   const [pecas, setPecas] = useState<PecaLDB[]>([])
   const [nf, setNF] = useState<NotaFiscal | null>(null)
   const [checks, setChecks] = useState(CHECK_ENC.map(() => false))
-  const [showNF, setShowNF] = useState(false)
-  const [nfForm, setNfForm] = useState({ numero_nf: '', emitido_em: new Date().toISOString().split('T')[0], valor: '', status_reembolso: 'Aguardando envio' })
-  const [saving, setSaving] = useState(false)
+  const [nfForm, setNfForm] = useState({
+    numero_nf: '',
+    emitido_em: new Date().toISOString().split('T')[0],
+    valor: '',
+    status_reembolso: 'Aguardando envio',
+  })
+  const [savingNF, setSavingNF] = useState(false)
   const [updatingStatus, setUpdatingStatus] = useState(false)
   const supabase = createClient()
   const router = useRouter()
@@ -35,18 +39,27 @@ export default function OSDetailPage() {
   const carregar = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
-    const { data: perfil } = await supabase.from('perfis').select('*, loja:lojas(*)').eq('id', user.id).single()
+    const { data: perfil } = await supabase
+      .from('perfis').select('*, loja:lojas(*)').eq('id', user.id).single()
     if (!perfil) { router.push('/login'); return }
     setUsuario(perfil as Usuario)
+
     const { data: lojasData } = await supabase.from('lojas').select('*').order('id')
     setLojas((lojasData ?? []) as Loja[])
-    const { data: osData } = await supabase.from('ordens').select('*, loja:lojas(*)').eq('id', id).single()
+
+    const { data: osData } = await supabase
+      .from('ordens').select('*, loja:lojas(*)').eq('id', id).single()
     if (!osData) { router.push('/os'); return }
     setOS(osData as Ordem)
-    const { data: pecasData } = await supabase.from('pecas_ldb').select('*').eq('ordem_id', id)
+
+    const { data: pecasData } = await supabase
+      .from('pecas_ldb').select('*').eq('ordem_id', id)
     setPecas((pecasData ?? []) as PecaLDB[])
-    const { data: nfData } = await supabase.from('notas_fiscais').select('*').eq('ordem_id', id).single()
+
+    const { data: nfData } = await supabase
+      .from('notas_fiscais').select('*').eq('ordem_id', id).maybeSingle()
     if (nfData) setNF(nfData as NotaFiscal)
+
     if (osData.status === 'Faturada') setChecks(CHECK_ENC.map(() => true))
   }, [supabase, router, id])
 
@@ -54,15 +67,17 @@ export default function OSDetailPage() {
 
   async function atualizarStatus(novoStatus: string) {
     setUpdatingStatus(true)
-    await supabase.from('ordens').update({ status: novoStatus }).eq('id', id)
-    setOS(prev => prev ? { ...prev, status: novoStatus as any } : null)
-    if (novoStatus === 'Concluída') setShowNF(true)
+    const { error } = await supabase
+      .from('ordens').update({ status: novoStatus }).eq('id', id)
+    if (!error) {
+      setOS(prev => prev ? { ...prev, status: novoStatus as any } : null)
+    }
     setUpdatingStatus(false)
   }
 
   async function salvarNF() {
     if (!nfForm.numero_nf.trim()) { alert('Informe o número da NF.'); return }
-    setSaving(true)
+    setSavingNF(true)
     const { data, error } = await supabase.from('notas_fiscais').insert({
       ordem_id: parseInt(id),
       loja_id: os!.loja_id,
@@ -71,18 +86,27 @@ export default function OSDetailPage() {
       valor: nfForm.valor ? parseFloat(nfForm.valor) : null,
       status_reembolso: nfForm.status_reembolso,
     }).select().single()
-    if (error) { alert('Erro: ' + error.message); setSaving(false); return }
+
+    if (error) {
+      alert('Erro ao vincular NF: ' + error.message)
+      setSavingNF(false)
+      return
+    }
     setNF(data as NotaFiscal)
     setOS(prev => prev ? { ...prev, status: 'Faturada' } : null)
-    setShowNF(false)
-    setSaving(false)
+    setChecks(CHECK_ENC.map(() => true))
+    setSavingNF(false)
   }
 
   const pct = Math.round(checks.filter(Boolean).length / checks.length * 100)
+  const podeVincularNF = os?.status === 'Concluída' && !nf
+  const podeConcluir = os?.status === 'Em execução' || os?.status === 'Aberta'
 
-  if (!os || !usuario) return <div className="min-h-screen flex items-center justify-center"><div className="text-sm text-gray-400">Carregando...</div></div>
-
-  const cfg = lojaConfig(os.loja_id)
+  if (!os || !usuario) return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="text-sm text-gray-400">Carregando...</div>
+    </div>
+  )
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -98,15 +122,23 @@ export default function OSDetailPage() {
           {os.loja && <BadgeLoja lojaId={os.loja_id} nome={os.loja.nome} />}
         </div>
 
+        {/* Alerta NF pendente — aparece para o consultor quando OS está Concluída */}
+        {podeVincularNF && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800 mb-4">
+            Esta OS está concluída e aguarda o vínculo da Nota Fiscal. Preencha o formulário abaixo para finalizar o processo.
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Coluna esquerda */}
+          {/* Coluna principal */}
           <div className="lg:col-span-2 space-y-4">
 
-            {/* Dados principais */}
+            {/* Dados da OS */}
             <div className="card p-5">
               <div className="section-title">Dados da OS</div>
-              <div className="grid grid-cols-2 gap-x-6 gap-y-1">
+              <div className="grid grid-cols-2 gap-x-6 gap-y-0">
                 {[
+                  ['Número', os.numero],
                   ['Protocolo', os.protocolo],
                   ['Tipo', os.tipo],
                   ['Chassi', os.chassi],
@@ -121,7 +153,7 @@ export default function OSDetailPage() {
                 ].map(([k, v]) => (
                   <div key={k} className="py-1.5 border-b border-gray-50">
                     <div className="text-xs text-gray-400">{k}</div>
-                    <div className="text-sm font-medium text-gray-900 mt-0.5">{v}</div>
+                    <div className="text-sm font-medium text-gray-900 mt-0.5 break-all">{v}</div>
                   </div>
                 ))}
               </div>
@@ -148,7 +180,9 @@ export default function OSDetailPage() {
                     <div key={p.id} className="bg-gray-50 rounded-lg p-3">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-sm font-semibold font-mono text-gray-900">{p.codigo}</span>
-                        <span className={`badge text-xs ${p.status === 'Aplicada' ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>{p.status}</span>
+                        <span className={`badge text-xs ${p.status === 'Aplicada' ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
+                          {p.status}
+                        </span>
                       </div>
                       <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs text-gray-500">
                         <span>Descrição: <span className="text-gray-700">{p.descricao}</span></span>
@@ -162,9 +196,9 @@ export default function OSDetailPage() {
               )}
             </div>
 
-            {/* NF vinculada */}
+            {/* NF já vinculada */}
             {nf && (
-              <div className="card p-5">
+              <div className="card p-5 border-green-200 border">
                 <div className="section-title">Nota fiscal vinculada</div>
                 <div className="grid grid-cols-2 gap-x-6 gap-y-1">
                   {[
@@ -185,35 +219,65 @@ export default function OSDetailPage() {
               </div>
             )}
 
-            {/* Formulário NF */}
-            {showNF && !nf && (
-              <div className="card p-5 border-amber-200 border">
+            {/* Formulário de vínculo de NF — visível quando OS está Concluída sem NF */}
+            {podeVincularNF && (
+              <div className="card p-5 border-blue-300 border bg-blue-50/40">
                 <div className="section-title">Vincular Nota Fiscal</div>
+                <p className="text-xs text-gray-500 mb-4">
+                  Após emitir a NF de serviço, registre os dados abaixo para vincular à esta OS.
+                </p>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="col-span-2">
                     <label className="label">Número da NF <span className="text-red-400">*</span></label>
-                    <input className="input" value={nfForm.numero_nf} onChange={e => setNfForm(f => ({ ...f, numero_nf: e.target.value }))} placeholder="Ex: NF 000130" />
+                    <input
+                      className="input"
+                      value={nfForm.numero_nf}
+                      onChange={e => setNfForm(f => ({ ...f, numero_nf: e.target.value }))}
+                      placeholder="Ex: NF 000130"
+                      autoFocus
+                    />
                   </div>
                   <div>
                     <label className="label">Data de emissão</label>
-                    <input className="input" type="date" value={nfForm.emitido_em} onChange={e => setNfForm(f => ({ ...f, emitido_em: e.target.value }))} />
+                    <input
+                      className="input"
+                      type="date"
+                      value={nfForm.emitido_em}
+                      onChange={e => setNfForm(f => ({ ...f, emitido_em: e.target.value }))}
+                    />
                   </div>
                   <div>
                     <label className="label">Valor (R$)</label>
-                    <input className="input" type="number" value={nfForm.valor} onChange={e => setNfForm(f => ({ ...f, valor: e.target.value }))} placeholder="0,00" />
+                    <input
+                      className="input"
+                      type="number"
+                      step="0.01"
+                      value={nfForm.valor}
+                      onChange={e => setNfForm(f => ({ ...f, valor: e.target.value }))}
+                      placeholder="0,00"
+                    />
                   </div>
                   <div className="col-span-2">
-                    <label className="label">Status do reembolso</label>
-                    <select className="input" value={nfForm.status_reembolso} onChange={e => setNfForm(f => ({ ...f, status_reembolso: e.target.value }))}>
+                    <label className="label">Status do reembolso junto à fábrica</label>
+                    <select
+                      className="input"
+                      value={nfForm.status_reembolso}
+                      onChange={e => setNfForm(f => ({ ...f, status_reembolso: e.target.value }))}
+                    >
                       <option>Aguardando envio</option>
                       <option>Enviado à fábrica</option>
                       <option>Reembolso recebido</option>
                     </select>
                   </div>
                 </div>
-                <div className="flex gap-2 mt-4">
-                  <button onClick={() => setShowNF(false)} className="btn">Cancelar</button>
-                  <button onClick={salvarNF} disabled={saving} className="btn btn-primary">{saving ? 'Salvando...' : 'Salvar vínculo'}</button>
+                <div className="mt-4">
+                  <button
+                    onClick={salvarNF}
+                    disabled={savingNF}
+                    className="btn btn-primary w-full justify-center"
+                  >
+                    {savingNF ? 'Salvando...' : 'Vincular NF e finalizar OS'}
+                  </button>
                 </div>
               </div>
             )}
@@ -224,30 +288,41 @@ export default function OSDetailPage() {
 
             {/* Ações de status */}
             <div className="card p-5">
-              <div className="section-title">Atualizar status</div>
+              <div className="section-title">Status da OS</div>
               <div className="space-y-2">
                 {os.status === 'Aberta' && (
-                  <button onClick={() => atualizarStatus('Em execução')} disabled={updatingStatus} className="btn w-full justify-center" style={{ background: '#FAEEDA', color: '#633806', borderColor: '#FAC775' }}>
-                    Iniciar execução
+                  <button
+                    onClick={() => atualizarStatus('Em execução')}
+                    disabled={updatingStatus}
+                    className="btn w-full justify-center"
+                    style={{ background: '#FAEEDA', color: '#633806', borderColor: '#FAC775' }}
+                  >
+                    {updatingStatus ? 'Atualizando...' : 'Iniciar execução'}
                   </button>
                 )}
                 {os.status === 'Em execução' && (
                   <button
-                    onClick={() => { if (pct < 100 && !confirm('Checklist incompleto. Concluir mesmo assim?')) return; atualizarStatus('Concluída') }}
+                    onClick={() => {
+                      if (pct < 100 && !confirm('Checklist incompleto. Concluir mesmo assim?')) return
+                      atualizarStatus('Concluída')
+                    }}
                     disabled={updatingStatus}
                     className="btn w-full justify-center"
                     style={{ background: '#FCEBEB', color: '#791F1F', borderColor: '#F7C1C1' }}
                   >
-                    Concluir OS
+                    {updatingStatus ? 'Atualizando...' : 'Concluir OS'}
                   </button>
                 )}
                 {os.status === 'Concluída' && !nf && (
-                  <button onClick={() => setShowNF(true)} className="btn btn-primary w-full justify-center">
-                    Vincular NF
-                  </button>
+                  <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3 text-center">
+                    Preencha o formulário de NF ao lado para finalizar
+                  </div>
                 )}
                 {os.status === 'Faturada' && (
-                  <div className="badge w-full justify-center py-2" style={{ background: '#EAF3DE', color: '#27500A' }}>
+                  <div
+                    className="badge w-full justify-center py-2 text-sm"
+                    style={{ background: '#EAF3DE', color: '#27500A' }}
+                  >
                     Processo encerrado
                   </div>
                 )}
@@ -280,11 +355,13 @@ export default function OSDetailPage() {
                   <span>Progresso</span><span>{pct}%</span>
                 </div>
                 <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                  <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: pct === 100 ? '#3B6D11' : '#185FA5' }} />
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{ width: `${pct}%`, background: pct === 100 ? '#3B6D11' : '#185FA5' }}
+                  />
                 </div>
               </div>
             </div>
-
           </div>
         </div>
       </main>

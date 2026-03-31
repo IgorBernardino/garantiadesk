@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { Usuario, Loja } from '@/types'
-import { MODELOS, TECNICOS, lojaConfig, LOJAS_CONFIG } from '@/lib/utils'
+import { MODELOS, TECNICOS, LOJAS_CONFIG } from '@/lib/utils'
 import Topbar from '@/components/layout/Topbar'
 import { useRouter } from 'next/navigation'
 
@@ -10,7 +10,7 @@ const STEPS = ['Loja', 'Tipo', 'Moto', 'Serviço', 'Peça LDB', 'Revisão']
 
 const CHECK_ITEMS = [
   'Loja e consultor identificados',
-  'Tipo de serviço selecionado (Recall ou Garantia)',
+  'Número da OS e tipo de serviço preenchidos',
   'Protocolo da fábrica informado',
   'Chassi e modelo da moto preenchidos',
   'Técnico responsável e descrição do serviço',
@@ -22,11 +22,12 @@ export default function NovaOSPage() {
   const [lojas, setLojas] = useState<Loja[]>([])
   const [step, setStep] = useState(0)
   const [saving, setSaving] = useState(false)
-  const [checks, setChecks] = useState([false, false, false, false, false, false])
+  const [checks, setChecks] = useState(CHECK_ITEMS.map(() => false))
 
   const [form, setForm] = useState({
     loja_id: 0,
     consultor: '',
+    numero: '',
     tipo: '',
     protocolo: '',
     chassi: '',
@@ -54,7 +55,8 @@ export default function NovaOSPage() {
   const carregar = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
-    const { data: perfil } = await supabase.from('perfis').select('*, loja:lojas(*)').eq('id', user.id).single()
+    const { data: perfil } = await supabase
+      .from('perfis').select('*, loja:lojas(*)').eq('id', user.id).single()
     if (!perfil) { router.push('/login'); return }
     setUsuario(perfil as Usuario)
     if (perfil.perfil === 'consultor' && perfil.loja_id) {
@@ -71,25 +73,32 @@ export default function NovaOSPage() {
   }
 
   function validar() {
-    if (step === 0 && (!form.loja_id || !form.consultor.trim())) { alert('Selecione a loja e informe o consultor.'); return false }
-    if (step === 1 && (!form.tipo || !form.protocolo.trim())) { alert('Selecione o tipo e informe o protocolo.'); return false }
-    if (step === 2 && (!form.chassi.trim() || !form.modelo || !form.cliente_nome.trim())) { alert('Preencha chassi, modelo e cliente.'); return false }
-    if (step === 3 && (!form.tecnico || !form.descricao.trim())) { alert('Selecione o técnico e descreva o serviço.'); return false }
+    if (step === 0 && (!form.loja_id || !form.consultor.trim())) {
+      alert('Selecione a loja e informe o consultor.'); return false
+    }
+    if (step === 1 && (!form.numero.trim() || !form.tipo || !form.protocolo.trim())) {
+      alert('Preencha o número da OS, tipo de serviço e protocolo.'); return false
+    }
+    if (step === 2 && (!form.chassi.trim() || !form.modelo || !form.cliente_nome.trim())) {
+      alert('Preencha chassi, modelo e cliente.'); return false
+    }
+    if (step === 3 && (!form.tecnico || !form.descricao.trim())) {
+      alert('Selecione o técnico e descreva o serviço.'); return false
+    }
     return true
   }
 
   function avancar() {
     if (!validar()) return
     if (step === 4) {
-      const newChecks = [
+      setChecks([
         !!(form.loja_id && form.consultor),
-        !!form.tipo,
+        !!(form.numero && form.tipo),
         !!form.protocolo,
         !!(form.chassi && form.modelo),
         !!(form.tecnico && form.descricao),
         !!(form.cod_peca && form.desc_peca),
-      ]
-      setChecks(newChecks)
+      ])
     }
     setStep(s => s + 1)
   }
@@ -97,7 +106,9 @@ export default function NovaOSPage() {
   async function salvar() {
     if (!checks.every(Boolean) && !confirm('Checklist incompleto. Deseja abrir mesmo assim?')) return
     setSaving(true)
+
     const { data: os, error } = await supabase.from('ordens').insert({
+      numero: form.numero.trim(),
       loja_id: form.loja_id,
       tipo: form.tipo,
       protocolo: form.protocolo.trim(),
@@ -114,7 +125,11 @@ export default function NovaOSPage() {
       consultor_id: usuario?.id,
     }).select().single()
 
-    if (error || !os) { alert('Erro ao salvar OS: ' + error?.message); setSaving(false); return }
+    if (error || !os) {
+      alert('Erro ao salvar OS: ' + (error?.message ?? 'erro desconhecido'))
+      setSaving(false)
+      return
+    }
 
     if (form.cod_peca.trim()) {
       await supabase.from('pecas_ldb').insert({
@@ -133,7 +148,13 @@ export default function NovaOSPage() {
     router.push(`/os/${os.id}`)
   }
 
-  if (!usuario) return <div className="min-h-screen flex items-center justify-center"><div className="text-sm text-gray-400">Carregando...</div></div>
+  if (!usuario) return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="text-sm text-gray-400">Carregando...</div>
+    </div>
+  )
+
+  const lojaAtiva = LOJAS_CONFIG.find(l => l.id === form.loja_id)
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -177,7 +198,7 @@ export default function NovaOSPage() {
                     key={cfg.id}
                     onClick={() => set('loja_id', cfg.id)}
                     disabled={usuario.perfil === 'consultor'}
-                    className="flex items-center gap-2 p-3 rounded-lg border text-left transition-all"
+                    className="flex items-center gap-2 p-3 rounded-lg border text-left transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                     style={form.loja_id === cfg.id
                       ? { borderColor: cfg.cor, background: cfg.bg, color: cfg.tc }
                       : { borderColor: '#e5e7eb', background: 'white', color: '#374151' }}
@@ -190,47 +211,84 @@ export default function NovaOSPage() {
             </div>
             <div className="card p-5">
               <div className="section-title">Consultor responsável</div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="label">Nome <span className="text-red-400">*</span></label>
-                  <input className="input" value={form.consultor} onChange={e => set('consultor', e.target.value)} placeholder="Seu nome" />
-                </div>
-                <div>
-                  <label className="label">Matrícula</label>
-                  <input className="input" value={''} placeholder="Opcional" />
-                </div>
+              <div>
+                <label className="label">Nome <span className="text-red-400">*</span></label>
+                <input
+                  className="input"
+                  value={form.consultor}
+                  onChange={e => set('consultor', e.target.value)}
+                  placeholder="Seu nome completo"
+                />
               </div>
             </div>
           </div>
         )}
 
-        {/* STEP 1: TIPO */}
+        {/* STEP 1: TIPO E NÚMERO */}
         {step === 1 && (
           <div className="space-y-4">
+            {/* Número da OS — preenchido pelo consultor */}
+            <div className="card p-5">
+              <div className="section-title">Número da Ordem de Serviço</div>
+              <div>
+                <label className="label">Número da OS <span className="text-red-400">*</span></label>
+                <input
+                  className="input font-mono text-base"
+                  value={form.numero}
+                  onChange={e => set('numero', e.target.value)}
+                  placeholder="Ex: OS-0042 ou 12345"
+                  autoFocus
+                />
+                <p className="text-xs text-gray-400 mt-2">
+                  Informe o número conforme gerado no sistema da concessionária (Dealer Net ou sistema interno).
+                </p>
+              </div>
+            </div>
+
+            {/* Tipo de serviço */}
             <div className="card p-5">
               <div className="section-title">Tipo de serviço</div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3 mb-4">
                 {(['Recall', 'Garantia'] as const).map(t => (
                   <button
                     key={t}
                     onClick={() => set('tipo', t)}
                     className="p-4 rounded-lg border-2 text-left transition-all"
                     style={form.tipo === t
-                      ? t === 'Recall' ? { borderColor: '#185FA5', background: '#E6F1FB' } : { borderColor: '#993556', background: '#FBEAF0' }
+                      ? t === 'Recall'
+                        ? { borderColor: '#185FA5', background: '#E6F1FB' }
+                        : { borderColor: '#993556', background: '#FBEAF0' }
                       : { borderColor: '#e5e7eb', background: 'white' }}
                   >
-                    <div className="font-semibold text-sm mb-1" style={form.tipo === t ? { color: t === 'Recall' ? '#0C447C' : '#72243E' } : { color: '#111827' }}>{t}</div>
+                    <div
+                      className="font-semibold text-sm mb-1"
+                      style={form.tipo === t
+                        ? { color: t === 'Recall' ? '#0C447C' : '#72243E' }
+                        : { color: '#111827' }}
+                    >
+                      {t}
+                    </div>
                     <div className="text-xs text-gray-500">
-                      {t === 'Recall' ? 'Convocação oficial da fábrica para correção de defeito de série' : 'Falha relatada pelo cliente dentro do prazo de garantia'}
+                      {t === 'Recall'
+                        ? 'Convocação oficial da fábrica para correção de defeito de série'
+                        : 'Falha relatada pelo cliente dentro do prazo de garantia'}
                     </div>
                   </button>
                 ))}
               </div>
-            </div>
-            <div className="card p-5">
-              <label className="label">Protocolo da fábrica <span className="text-red-400">*</span></label>
-              <input className="input" value={form.protocolo} onChange={e => set('protocolo', e.target.value)} placeholder="Ex: RC-2025-4510 ou GT-2025-1250" />
-              <p className="text-xs text-gray-400 mt-2">Obrigatório para solicitação de reembolso junto à fábrica.</p>
+
+              <div>
+                <label className="label">Protocolo da fábrica <span className="text-red-400">*</span></label>
+                <input
+                  className="input"
+                  value={form.protocolo}
+                  onChange={e => set('protocolo', e.target.value)}
+                  placeholder="Ex: RC-2025-4510 ou GT-2025-1250"
+                />
+                <p className="text-xs text-gray-400 mt-2">
+                  Obrigatório para solicitação de reembolso junto à fábrica.
+                </p>
+              </div>
             </div>
           </div>
         )}
@@ -242,7 +300,13 @@ export default function NovaOSPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2">
                 <label className="label">Chassi (VIN) <span className="text-red-400">*</span></label>
-                <input className="input font-mono" value={form.chassi} onChange={e => set('chassi', e.target.value.toUpperCase())} placeholder="9C2JC0510RR000001" maxLength={17} />
+                <input
+                  className="input font-mono"
+                  value={form.chassi}
+                  onChange={e => set('chassi', e.target.value.toUpperCase())}
+                  placeholder="9C2JC0510RR000001"
+                  maxLength={17}
+                />
               </div>
               <div>
                 <label className="label">Modelo <span className="text-red-400">*</span></label>
@@ -293,11 +357,21 @@ export default function NovaOSPage() {
               </div>
               <div className="col-span-2">
                 <label className="label">Descrição do serviço <span className="text-red-400">*</span></label>
-                <textarea className="input min-h-20 resize-y" value={form.descricao} onChange={e => set('descricao', e.target.value)} placeholder="Descreva o serviço conforme boletim técnico da fábrica..." />
+                <textarea
+                  className="input min-h-24 resize-y"
+                  value={form.descricao}
+                  onChange={e => set('descricao', e.target.value)}
+                  placeholder="Descreva o serviço conforme boletim técnico da fábrica..."
+                />
               </div>
               <div className="col-span-2">
                 <label className="label">Observações</label>
-                <textarea className="input min-h-16 resize-y" value={form.observacoes} onChange={e => set('observacoes', e.target.value)} placeholder="Condições da moto, reclamações do cliente..." />
+                <textarea
+                  className="input min-h-16 resize-y"
+                  value={form.observacoes}
+                  onChange={e => set('observacoes', e.target.value)}
+                  placeholder="Condições da moto, reclamações do cliente..."
+                />
               </div>
             </div>
           </div>
@@ -307,14 +381,19 @@ export default function NovaOSPage() {
         {step === 4 && (
           <div className="space-y-4">
             <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-xs text-blue-800">
-              A peça LDB não pode ser lançada no Dealer Net com saldo. Este registro é o controle oficial desta concessionária.
+              A peça LDB não pode ser lançada no Dealer Net com saldo. Este registro é o controle oficial desta loja.
             </div>
             <div className="card p-5">
               <div className="section-title">Peça livre de débito</div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="label">Código da peça <span className="text-red-400">*</span></label>
-                  <input className="input font-mono" value={form.cod_peca} onChange={e => set('cod_peca', e.target.value.toUpperCase())} placeholder="31100-K97-V41" />
+                  <input
+                    className="input font-mono"
+                    value={form.cod_peca}
+                    onChange={e => set('cod_peca', e.target.value.toUpperCase())}
+                    placeholder="31100-K97-V41"
+                  />
                 </div>
                 <div>
                   <label className="label">Descrição <span className="text-red-400">*</span></label>
@@ -353,6 +432,7 @@ export default function NovaOSPage() {
                 {[
                   ['Loja', LOJAS_CONFIG.find(l => l.id === form.loja_id)?.nome ?? '—'],
                   ['Consultor', form.consultor],
+                  ['Número da OS', form.numero],
                   ['Tipo', form.tipo],
                   ['Protocolo', form.protocolo],
                   ['Chassi', form.chassi],
@@ -392,7 +472,10 @@ export default function NovaOSPage() {
                   <span>{checks.filter(Boolean).length}/{checks.length}</span>
                 </div>
                 <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-blue-600 rounded-full transition-all" style={{ width: `${Math.round(checks.filter(Boolean).length / checks.length * 100)}%` }} />
+                  <div
+                    className="h-full bg-blue-600 rounded-full transition-all"
+                    style={{ width: `${Math.round(checks.filter(Boolean).length / checks.length * 100)}%` }}
+                  />
                 </div>
               </div>
             </div>
@@ -401,7 +484,10 @@ export default function NovaOSPage() {
 
         {/* Navegação */}
         <div className="flex justify-between mt-6">
-          <button onClick={() => step > 0 ? setStep(s => s - 1) : router.back()} className="btn">
+          <button
+            onClick={() => step > 0 ? setStep(s => s - 1) : router.back()}
+            className="btn"
+          >
             ← {step === 0 ? 'Cancelar' : 'Anterior'}
           </button>
           {step < STEPS.length - 1 ? (

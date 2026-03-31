@@ -30,11 +30,9 @@ export default function DashboardPage() {
     const { data: lojasData } = await supabase.from('lojas').select('*').order('id')
     setLojas((lojasData ?? []) as Loja[])
 
-    const { data: ordensData } = await supabase
-  .from('ordens')
-  .select('*, loja:lojas(*)') 
-  .order('criado_em', { ascending: false })
-  
+    const { data: ordensData } = await supabase.from('ordens').select('*, loja:lojas(*), nota_fiscal:notas_fiscais(*)').order('criado_em', { ascending: false })
+    setOrdens((ordensData ?? []) as Ordem[])
+
     const { data: pecasData } = await supabase.from('pecas_ldb').select('*, loja:lojas(*)').order('criado_em', { ascending: false })
     setPecas((pecasData ?? []) as PecaLDB[])
 
@@ -43,11 +41,7 @@ export default function DashboardPage() {
 
   useEffect(() => { carregar() }, [carregar])
 
-  const filtradas = (!lojaFiltro || lojaFiltro === null) 
-  ? ordens 
-  : ordens.filter(o => Number(o.loja_id) === Number(lojaFiltro))
-
-  
+  const filtradas = lojaFiltro ? ordens.filter(o => o.loja_id === lojaFiltro) : ordens
   const pecasFiltradas = lojaFiltro ? pecas.filter(p => p.loja_id === lojaFiltro) : pecas
 
   const qtd = (s: string) => filtradas.filter(o => o.status === s).length
